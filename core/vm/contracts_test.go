@@ -21,10 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // precompiledTest defines the input/output pairs for precompiled contract tests.
@@ -65,6 +69,7 @@ var allPrecompiles = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{16}):   &bls12381Pairing{},
 	common.BytesToAddress([]byte{17}):   &bls12381MapG1{},
 	common.BytesToAddress([]byte{18}):   &bls12381MapG2{},
+	common.BytesToAddress([]byte{20}):   &loreprecompile{},
 }
 
 // EIP-152 test vectors
@@ -96,7 +101,7 @@ func testPrecompiled(addr string, test precompiledTest, t *testing.T) {
 	in := common.Hex2Bytes(test.Input)
 	gas := p.RequiredGas(in)
 	t.Run(fmt.Sprintf("%s-Gas=%d", test.Name, gas), func(t *testing.T) {
-		if res, _, err := RunPrecompiledContract(p, in, gas); err != nil {
+		if res, _, err := RunPrecompiledContract(nil, nil, p, in, gas); err != nil {
 			t.Error(err)
 		} else if common.Bytes2Hex(res) != test.Expected {
 			t.Errorf("Expected %v, got %v", test.Expected, common.Bytes2Hex(res))
@@ -118,7 +123,7 @@ func testPrecompiledOOG(addr string, test precompiledTest, t *testing.T) {
 	gas := p.RequiredGas(in) - 1
 
 	t.Run(fmt.Sprintf("%s-Gas=%d", test.Name, gas), func(t *testing.T) {
-		_, _, err := RunPrecompiledContract(p, in, gas)
+		_, _, err := RunPrecompiledContract(nil, nil, p, in, gas)
 		if err.Error() != "out of gas" {
 			t.Errorf("Expected error [out of gas], got [%v]", err)
 		}
@@ -135,7 +140,7 @@ func testPrecompiledFailure(addr string, test precompiledFailureTest, t *testing
 	in := common.Hex2Bytes(test.Input)
 	gas := p.RequiredGas(in)
 	t.Run(test.Name, func(t *testing.T) {
-		_, _, err := RunPrecompiledContract(p, in, gas)
+		_, _, err := RunPrecompiledContract(nil, nil, p, in, gas)
 		if err.Error() != test.ExpectedError {
 			t.Errorf("Expected error [%v], got [%v]", test.ExpectedError, err)
 		}
@@ -167,7 +172,7 @@ func benchmarkPrecompiled(addr string, test precompiledTest, bench *testing.B) {
 		bench.ResetTimer()
 		for i := 0; i < bench.N; i++ {
 			copy(data, in)
-			res, _, err = RunPrecompiledContract(p, data, reqGas)
+			res, _, err = RunPrecompiledContract(nil, nil, p, data, reqGas)
 		}
 		bench.StopTimer()
 		elapsed := uint64(time.Since(start))
@@ -271,6 +276,49 @@ func TestPrecompileBlake2FMalformedInput(t *testing.T) {
 }
 
 func TestPrecompiledEcrecover(t *testing.T) { testJson("ecRecover", "01", t) }
+
+type TestD struct {
+	Input       string
+	Expected    string
+	Gas         uint64
+	Name        string
+	NoBenchmark bool
+}
+
+func TestPrecompiledIbc(t *testing.T) {
+	addr := "14"
+	test := TestD{
+		Input:       "000000000000000000000000000000000000000000000000000000000000000118c547e4f7b0f325ad1e56f57e26c745b09a3e503d86e00e5255ff7f715d3d1c000000000000000000000000000000000000000000000000000000000000001c73b1693892219d736caba55bdb67216e485557ea6b6af75f37096c9aa6a5a75feeb940b1d03b21e36b0e47e79769f095fe2ab855bd91e3a38756b7d75a9c4549",
+		Expected:    "000000000000000000000000a94f5374fce5edbc8e2a8697c15331677e6ebf0b",
+		Gas:         3000,
+		Name:        "TestPrecompiledIbc",
+		NoBenchmark: false,
+	}
+	p := allPrecompiles[common.HexToAddress(addr)]
+	in := common.Hex2Bytes(test.Input)
+	gas := p.RequiredGas(in)
+	vmctx := BlockContext{
+		Transfer: func(StateDB, common.Address, common.Address, *big.Int) {},
+	}
+	statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	evm := NewEVM(vmctx, TxContext{}, statedb, params.AllEthashProtocolChanges, Config{})
+	caller := AccountRef(common.Address{})
+	t.Run(fmt.Sprintf("%s-Gas=%d", test.Name, gas), func(t *testing.T) {
+		if res, _, err := RunPrecompiledContract(evm, caller, p, in, gas); err != nil {
+			t.Error(err)
+		} else if common.Bytes2Hex(res) != test.Expected {
+			t.Errorf("Expected %v, got %v", test.Expected, common.Bytes2Hex(res))
+		}
+		if expGas := test.Gas; expGas != gas {
+			t.Errorf("%v: gas wrong, expected %d, got %d", test.Name, expGas, gas)
+		}
+		// Verify that the precompile did not touch the input buffer
+		exp := common.Hex2Bytes(test.Input)
+		if !bytes.Equal(in, exp) {
+			t.Errorf("Precompiled %v modified input data", addr)
+		}
+	})
+}
 
 func testJson(name, addr string, t *testing.T) {
 	tests, err := loadJson(name)
