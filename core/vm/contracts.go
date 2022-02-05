@@ -93,7 +93,8 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{7}):  &bn256ScalarMulIstanbul{},
 	common.BytesToAddress([]byte{8}):  &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}):  &blake2F{},
-	common.BytesToAddress([]byte{20}): &loreprecompile{},
+	common.BytesToAddress([]byte{20}): &proxyPrecompile{},
+	common.BytesToAddress([]byte{21}): &introspection{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -1048,24 +1049,85 @@ func (c *bls12381MapG2) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 	return g.EncodePoint(r), nil
 }
 
-// loreprecompile
-type loreprecompile struct{}
+// proxyPrecompile
+type proxyPrecompile struct{}
 
 // RequiredGas returns the gas required to execute the pre-compiled contract.
-func (c *loreprecompile) RequiredGas(input []byte) uint64 {
+func (c *proxyPrecompile) RequiredGas(input []byte) uint64 {
 	return params.EcrecoverGas
 }
 
-func (c *loreprecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
-	fmt.Println("-------loreprecompile--0----", common.Bytes2Hex(input))
+func (c *proxyPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	fmt.Println("-------proxyPrecompile--0----", common.Bytes2Hex(input))
 	addr := common.BytesToAddress(input[0:32])
 	callInput := input[32:]
 
-	fmt.Println("-------loreprecompile--1----", caller, addr, callInput)
+	fmt.Println("-------proxyPrecompile--1----", caller, addr, callInput)
 
 	ret, leftOverGas, err := evm.Call(caller, addr, callInput, 1000000, new(big.Int))
 
-	fmt.Println("-------loreprecompile--2----", ret, leftOverGas, err)
+	fmt.Println("-------proxyPrecompile--1----", ret, leftOverGas, err)
 
 	return ret, err
+}
+
+// introspectionPrecompile
+type introspection struct{}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+func (c *introspection) RequiredGas(input []byte) uint64 {
+	return params.EcrecoverGas
+}
+
+func (c *introspection) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	fmt.Println("-------introspection--0----", common.Bytes2Hex(input))
+	signature := common.Bytes2Hex(input[0:4])
+	callInput := input[4:]
+
+	fmt.Println("-------introspection--1----", signature, callInput)
+
+	switch signature {
+	case "2d142a99":
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		return getBlockHeader(evm, blockNumber)
+	case "ceb173bb":
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		field := string(callInput[32:])
+		return getFromBlockByHash(evm, blockNumber, field)
+	default:
+		return nil, errors.New("invalid introspection function")
+	}
+
+	// fmt.Println("-------introspection--3----", evm.Chain)
+	// block := evm.Chain.GetBlockByNumber(244)
+	// fmt.Println("-------introspection--4----", block)
+	// fmt.Println("-------introspection--4-Number---", block.Number())
+	// fmt.Println("-------introspection--4-Time---", block.Time())
+	// fmt.Println("-------introspection--4-GasUsed---", block.GasUsed())
+	// fmt.Println("-------introspection--4-Header---", block.Header())
+
+	// fmt.Println("-------introspection--4-Transactions---", block.Transactions())
+	// tx := block.Transaction(common.HexToHash("0x8f95c44467fbd4e638df827adf5735d62913263edae45c5aecff8c3eb0c81239"))
+
+	// fmt.Println("-------introspection--4-Transaction---", tx)
+	// fmt.Println("-------introspection--4-Transaction-Data--", tx.Data())
+}
+
+func getBlockHeader(evm *EVM, blockNumber uint64) ([]byte, error) {
+	fmt.Println("-------introspection--getBlockHeader----", blockNumber)
+	block := evm.Chain.GetBlockByNumber(blockNumber)
+	fmt.Println("-------introspection--getBlockHeader----", block)
+	return nil, nil
+}
+
+func getFromBlockByHash(evm *EVM, blockNumber uint64, field string) ([]byte, error) {
+	fmt.Println("-------introspection--getFromBlockByHash----", blockNumber, field)
+	block := evm.Chain.GetBlockByNumber(blockNumber)
+	fmt.Println("-------introspection--getFromBlockByHash----", block)
+	// result := new(big.Int).SetUint64(20).FillBytes(make([]byte, 32))
+	// result = append(result, new(big.Int).SetUint64(32).FillBytes(make([]byte, 32))...)
+	// result = append(result, block.Number().FillBytes(make([]byte, 32))...)
+	result := block.Number().FillBytes(make([]byte, 32))
+	fmt.Println("-------introspection--getFromBlockByHash-result---", result)
+	return result, nil
 }

@@ -35,6 +35,16 @@ type ChainContext interface {
 	GetHeader(common.Hash, uint64) *types.Header
 }
 
+type ChainContextExtended interface {
+	// Engine retrieves the chain's consensus engine.
+	Engine() consensus.Engine
+
+	// GetHeader returns the hash corresponding to their hash.
+	GetHeader(common.Hash, uint64) *types.Header
+	GetBlock(common.Hash, uint64) *types.Block
+	GetBlockByNumber(uint64) *types.Block
+}
+
 // NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	var (
