@@ -1090,27 +1090,25 @@ func (c *introspection) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 	case "2d142a99":
 		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
 		return getBlockHeader(evm, blockNumber)
+	case "04c07569":
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		return getBlock(evm, blockNumber)
 	case "ceb173bb":
 		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
-		field := string(callInput[32:])
-		return getFromBlockByHash(evm, blockNumber, field)
+		fieldLength := new(big.Int).SetBytes(callInput[64:96]).Uint64()
+		fieldEnd := 96 + fieldLength
+		field := string(callInput[96:fieldEnd])
+		return getFromBlock(evm, blockNumber, field)
+	case "e5ec9a7b":
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		transactionIndex := new(big.Int).SetBytes(callInput[32:64]).Uint64()
+		fieldLength := new(big.Int).SetBytes(callInput[96:128]).Uint64()
+		fieldEnd := 128 + fieldLength
+		field := string(callInput[128:fieldEnd])
+		return getFromTransaction(evm, blockNumber, transactionIndex, field)
 	default:
 		return nil, errors.New("invalid introspection function")
 	}
-
-	// fmt.Println("-------introspection--3----", evm.Chain)
-	// block := evm.Chain.GetBlockByNumber(244)
-	// fmt.Println("-------introspection--4----", block)
-	// fmt.Println("-------introspection--4-Number---", block.Number())
-	// fmt.Println("-------introspection--4-Time---", block.Time())
-	// fmt.Println("-------introspection--4-GasUsed---", block.GasUsed())
-	// fmt.Println("-------introspection--4-Header---", block.Header())
-
-	// fmt.Println("-------introspection--4-Transactions---", block.Transactions())
-	// tx := block.Transaction(common.HexToHash("0x8f95c44467fbd4e638df827adf5735d62913263edae45c5aecff8c3eb0c81239"))
-
-	// fmt.Println("-------introspection--4-Transaction---", tx)
-	// fmt.Println("-------introspection--4-Transaction-Data--", tx.Data())
 }
 
 func getBlockHeader(evm *EVM, blockNumber uint64) ([]byte, error) {
@@ -1120,14 +1118,111 @@ func getBlockHeader(evm *EVM, blockNumber uint64) ([]byte, error) {
 	return nil, nil
 }
 
-func getFromBlockByHash(evm *EVM, blockNumber uint64, field string) ([]byte, error) {
-	fmt.Println("-------introspection--getFromBlockByHash----", blockNumber, field)
+func getBlock(evm *EVM, blockNumber uint64) ([]byte, error) {
+	return nil, nil
+}
+
+func getFromBlock(evm *EVM, blockNumber uint64, field string) ([]byte, error) {
+	fmt.Println("-------introspection--getFromBlock----", blockNumber, field)
 	block := evm.Chain.GetBlockByNumber(blockNumber)
-	fmt.Println("-------introspection--getFromBlockByHash----", block)
-	// result := new(big.Int).SetUint64(20).FillBytes(make([]byte, 32))
-	// result = append(result, new(big.Int).SetUint64(32).FillBytes(make([]byte, 32))...)
-	// result = append(result, block.Number().FillBytes(make([]byte, 32))...)
-	result := block.Number().FillBytes(make([]byte, 32))
-	fmt.Println("-------introspection--getFromBlockByHash-result---", result)
-	return result, nil
+
+	var result []byte
+
+	switch field {
+	case "hash":
+		result = block.Hash().Bytes()
+	case "parentHash":
+		result = block.ParentHash().Bytes()
+	case "sha3Uncles":
+		result = block.UncleHash().Bytes()
+	case "miner":
+		result = block.Coinbase().Hash().Bytes()
+	case "stateRoot":
+		result = block.Root().Bytes()
+	case "transactionsRoot":
+		result = block.TxHash().Bytes()
+	case "receiptsRoot":
+		result = block.ReceiptHash().Bytes()
+	case "logsBloom":
+		result = block.Bloom().Bytes()
+	case "difficulty":
+		result = block.Difficulty().FillBytes(make([]byte, 32))
+	case "number":
+		result = block.Number().FillBytes(make([]byte, 32))
+	case "gasLimit":
+		result = new(big.Int).SetUint64(block.GasLimit()).FillBytes(make([]byte, 32))
+	case "gasUsed":
+		result = new(big.Int).SetUint64(block.GasUsed()).FillBytes(make([]byte, 32))
+	case "timestamp":
+		result = new(big.Int).SetUint64(block.Time()).FillBytes(make([]byte, 32))
+	case "extraData":
+		result = block.Extra()
+	case "mixHash":
+		result = block.MixDigest().Bytes()
+	case "nonce":
+		result = new(big.Int).SetUint64(block.Nonce()).FillBytes(make([]byte, 32))
+	default:
+		return nil, errors.New("invalid introspection block field")
+	}
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+	encodedResult = append(encodedResult, result...)
+
+	padding := 32 - len(encodedResult)%32
+	encodedResult = append(encodedResult, make([]byte, padding)...)
+
+	fmt.Println("-------introspection--getFromBlock encodedResult----", encodedResult)
+
+	return encodedResult, nil
+}
+
+func getFromTransaction(evm *EVM, blockNumber uint64, transactionIndex uint64, field string) ([]byte, error) {
+	fmt.Println("-------introspection--getFromTransaction----", blockNumber, transactionIndex, field)
+	block := evm.Chain.GetBlockByNumber(blockNumber)
+	transaction := block.Transactions()[transactionIndex]
+
+	var result []byte
+
+	switch field {
+	case "type":
+		result = new(big.Int).SetUint64(uint64(transaction.Type())).FillBytes(make([]byte, 32))
+	case "data":
+		result = transaction.Data()
+	case "gasLimit":
+		result = new(big.Int).SetUint64(transaction.Gas()).FillBytes(make([]byte, 32))
+	case "gasPrice":
+		result = transaction.GasPrice().FillBytes(make([]byte, 32))
+	case "to":
+		result = transaction.To().Hash().Bytes()
+	case "value":
+		result = transaction.Value().FillBytes(make([]byte, 32))
+	case "nonce":
+		result = new(big.Int).SetUint64(transaction.Nonce()).FillBytes(make([]byte, 32))
+	case "v":
+		v, _, _ := transaction.RawSignatureValues()
+		result = v.FillBytes(make([]byte, 32))
+	case "r":
+		_, r, _ := transaction.RawSignatureValues()
+		result = r.FillBytes(make([]byte, 32))
+	case "s":
+		_, _, s := transaction.RawSignatureValues()
+		result = s.FillBytes(make([]byte, 32))
+	default:
+		return nil, errors.New("invalid introspection transaction field")
+	}
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+	encodedResult = append(encodedResult, result...)
+	padding := 32 - len(encodedResult)%32
+	encodedResult = append(encodedResult, make([]byte, padding)...)
+
+	fmt.Println("-------introspection--getFromTransaction encodedResult----", encodedResult)
+
+	return encodedResult, nil
 }

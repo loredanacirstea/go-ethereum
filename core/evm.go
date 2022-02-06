@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
@@ -43,6 +44,8 @@ type ChainContextExtended interface {
 	GetHeader(common.Hash, uint64) *types.Header
 	GetBlock(common.Hash, uint64) *types.Block
 	GetBlockByNumber(uint64) *types.Block
+	GetTransactionLookup(common.Hash) *rawdb.LegacyTxLookupEntry
+	GetReceiptsByHash(hash common.Hash) types.Receipts
 }
 
 // NewEVMBlockContext creates a new context for use in the EVM.
