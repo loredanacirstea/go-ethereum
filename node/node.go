@@ -27,6 +27,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/core/ipfs"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -38,6 +39,7 @@ import (
 
 // Node is a container on which services can be registered.
 type Node struct {
+	ipfs          *ipfs.IpfsContext
 	eventmux      *event.TypeMux
 	config        *Config
 	accman        *accounts.Manager
@@ -145,12 +147,16 @@ func New(conf *Config) (*Node, error) {
 		return nil, err
 	}
 
-	// Configure RPC servers.
+	// Configure RPC servers.c
 	node.http = newHTTPServer(node.log, conf.HTTPTimeouts)
 	node.ws = newHTTPServer(node.log, rpc.DefaultHTTPTimeouts)
 	node.ipc = newIPCServer(node.log, conf.IPCEndpoint())
-
+	node.ipfs = ipfs.NewIpfs()
 	return node, nil
+}
+
+func (n *Node) Ipfs() *ipfs.IpfsContext {
+	return n.ipfs
 }
 
 // Start starts all registered lifecycles, RPC services and p2p networking.
