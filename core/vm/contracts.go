@@ -95,6 +95,7 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{9}):  &blake2F{},
 	common.BytesToAddress([]byte{20}): &proxyPrecompile{},
 	common.BytesToAddress([]byte{21}): &introspection{},
+	common.BytesToAddress([]byte{22}): &ipfsAccess{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -1047,6 +1048,56 @@ func (c *bls12381MapG2) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 
 	// Encode the G2 point to 256 bytes
 	return g.EncodePoint(r), nil
+}
+
+// ipfsAccess implements IBC access
+type ipfsAccess struct{}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+func (c *ipfsAccess) RequiredGas(input []byte) uint64 {
+	return params.EcrecoverGas
+}
+
+func (c *ipfsAccess) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	signature := common.Bytes2Hex(input[0:4])
+	callInput := input[4:]
+	contentEnd := 64 + new(big.Int).SetBytes(callInput[32:64]).Uint64()
+	content := callInput[64:contentEnd]
+
+	fmt.Println("--ipfsPrecompile--", signature, callInput)
+	var result []byte
+	var err error
+
+	switch signature {
+	case "9c597f5a": // save(bytes)
+		result, err = evm.Ipfs.SaveFile(content)
+	case "bc0cd365": // loadByCID(bytes)
+		result, err = evm.Ipfs.LoadFile(content)
+	case "32273c21": // loadByName(bytes)
+		return nil, nil
+	case "a16395c0": // resolveName(bytes)
+		return nil, nil
+	case "357aa4b5": // createName(bytes)
+		return nil, nil
+	default:
+		return nil, errors.New("invalid ipfsAccess function")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+	encodedResult = append(encodedResult, result...)
+
+	padding := 32 - len(encodedResult)%32
+	encodedResult = append(encodedResult, make([]byte, padding)...)
+
+	fmt.Println("--ipfsPrecompile result--", encodedResult)
+	return encodedResult, err
 }
 
 // proxyPrecompile

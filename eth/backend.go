@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
+	"github.com/ethereum/go-ethereum/core/ipfs"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -65,6 +66,7 @@ type Config = ethconfig.Config
 
 // Ethereum implements the Ethereum full node service.
 type Ethereum struct {
+	ipfs   *ipfs.IpfsContext
 	config *ethconfig.Config
 
 	// Handlers
@@ -268,6 +270,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	// Successful startup; push a marker and check previous unclean shutdowns.
 	eth.shutdownTracker.MarkStartup()
+
+	eth.ipfs = stack.Ipfs()
 
 	return eth, nil
 }
@@ -524,6 +528,7 @@ func (s *Ethereum) SyncMode() downloader.SyncMode {
 	mode, _ := s.handler.chainSync.modeAndLocalHead()
 	return mode
 }
+func (s *Ethereum) Ipfs() *ipfs.IpfsContext { return s.ipfs }
 
 // Protocols returns all the currently configured
 // network protocols to start.

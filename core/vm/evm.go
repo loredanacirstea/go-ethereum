@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/ipfs"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -105,6 +106,7 @@ type ChainContext interface {
 // The EVM should never be reused and is not thread safe.
 type EVM struct {
 	Chain ChainContext
+	Ipfs  ipfs.IpfsContext
 	// Context provides auxiliary blockchain related information
 	Context BlockContext
 	TxContext
