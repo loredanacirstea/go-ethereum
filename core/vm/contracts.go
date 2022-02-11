@@ -95,6 +95,7 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{9}):  &blake2F{},
 	common.BytesToAddress([]byte{20}): &proxyPrecompile{},
 	common.BytesToAddress([]byte{21}): &introspection{},
+	common.BytesToAddress([]byte{23}): &proofsPrecompile{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -1225,4 +1226,113 @@ func getFromTransaction(evm *EVM, blockNumber uint64, transactionIndex uint64, f
 	fmt.Println("-------introspection--getFromTransaction encodedResult----", encodedResult)
 
 	return encodedResult, nil
+}
+
+// introspectionPrecompile
+type proofsPrecompile struct{}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+func (c *proofsPrecompile) RequiredGas(input []byte) uint64 {
+	return params.EcrecoverGas
+}
+
+func (c *proofsPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	signature := common.Bytes2Hex(input[0:4])
+	callInput := input[4:]
+
+	fmt.Println("--proofsPrecompile--", signature, callInput)
+	var result [][]byte
+	var err error
+
+	switch signature {
+	case "91cfcb8f": // proofTransaction(uint256,bytes32)
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		txHash := common.BytesToHash(callInput[32:64])
+		result, err = proofTransaction(evm, blockNumber, txHash)
+	case "f7c278b1": // proofReceipt(uint256,bytes32)
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		txHash := common.BytesToHash(callInput[32:64])
+		result, err = proofReceipt(evm, blockNumber, txHash)
+	case "6bb63258": // proofLog(uint256,bytes32,uint256)
+		blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		txHash := common.BytesToHash(callInput[32:64])
+		logIndex := new(big.Int).SetBytes(callInput[64:96]).Uint64()
+		result, err = proofLog(evm, blockNumber, txHash, logIndex)
+	case "3c50bab3": // proofAccount(uint256,address)
+		accountAddress := common.BytesToAddress(callInput)
+		result, err = proofAccount(evm, accountAddress)
+	case "7d10f497": // "proofBalance(uint256,address)
+		accountAddress := common.BytesToAddress(callInput)
+		result, err = proofBalance(evm, accountAddress)
+	case "1f133122": // proofStorage(uint256,address,bytes32)
+		accountAddress := common.BytesToAddress(callInput[0:32])
+		storageKey := common.BytesToHash(callInput[32:64])
+		result, err = proofStorage(evm, accountAddress, storageKey)
+	default:
+		return nil, errors.New("invalid proofsPrecompile function")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+
+	var encodedItems [][]byte
+
+	for i := 0; i < len(result); i++ {
+		padding := 32 - len(result[i])%32
+		encodedItem := append(result[i], make([]byte, padding)...)
+		encodedItem = append(
+			new(big.Int).SetUint64(uint64(len(encodedItem))).FillBytes(make([]byte, 32)),
+			encodedItem...,
+		)
+		encodedItems = append(encodedItems, encodedItem)
+	}
+	itemOffset := len(encodedItems) * 32
+	for i := 0; i < len(encodedItems); i++ {
+		encodedResult = append(
+			encodedResult,
+			new(big.Int).SetUint64(uint64(itemOffset)).FillBytes(make([]byte, 32))...,
+		)
+		itemOffset = itemOffset + len(encodedItems[i])
+	}
+
+	for i := 0; i < len(encodedItems); i++ {
+		encodedResult = append(encodedResult, encodedItems[i]...)
+	}
+
+	fmt.Println("--proofsPrecompile--encodedResult--", common.Bytes2Hex(encodedResult))
+	return encodedResult, err
+}
+
+func proofTransaction(evm *EVM, blockNumber uint64, txHash common.Hash) ([][]byte, error) {
+	fmt.Println("--proofTransaction--", blockNumber, txHash)
+	// proof := GetProof()
+	panic("---")
+	return make([][]byte, 32), nil
+}
+
+func proofReceipt(evm *EVM, blockNumber uint64, txHash common.Hash) ([][]byte, error) {
+	return make([][]byte, 32), nil
+}
+
+func proofLog(evm *EVM, blockNumber uint64, txHash common.Hash, logIndex uint64) ([][]byte, error) {
+	return make([][]byte, 32), nil
+}
+
+func proofAccount(evm *EVM, accountAddress common.Address) ([][]byte, error) {
+	proof, err := evm.StateDB.GetProof(accountAddress)
+	return proof, err
+}
+
+func proofBalance(evm *EVM, accountAddress common.Address) ([][]byte, error) {
+	return make([][]byte, 32), nil
+}
+
+func proofStorage(evm *EVM, accountAddress common.Address, storageKey common.Hash) ([][]byte, error) {
+	return make([][]byte, 32), nil
 }
