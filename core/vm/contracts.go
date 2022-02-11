@@ -1265,8 +1265,9 @@ func (c *proofsPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]by
 		accountAddress := common.BytesToAddress(callInput)
 		result, err = proofBalance(evm, accountAddress)
 	case "1f133122": // proofStorage(uint256,address,bytes32)
-		accountAddress := common.BytesToAddress(callInput[0:32])
-		storageKey := common.BytesToHash(callInput[32:64])
+		// blockNumber := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		accountAddress := common.BytesToAddress(callInput[32:64])
+		storageKey := common.BytesToHash(callInput[64:96])
 		result, err = proofStorage(evm, accountAddress, storageKey)
 	default:
 		return nil, errors.New("invalid proofsPrecompile function")
@@ -1334,5 +1335,7 @@ func proofBalance(evm *EVM, accountAddress common.Address) ([][]byte, error) {
 }
 
 func proofStorage(evm *EVM, accountAddress common.Address, storageKey common.Hash) ([][]byte, error) {
-	return make([][]byte, 32), nil
+	fmt.Println("--proofStorage--", accountAddress, storageKey)
+	proof, err := evm.StateDB.GetStorageProof(accountAddress, storageKey)
+	return proof, err
 }

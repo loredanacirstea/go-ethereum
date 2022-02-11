@@ -76,6 +76,7 @@ type StateDB interface {
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 
 	GetProof(addr common.Address) ([][]byte, error)
+	GetStorageProof(a common.Address, key common.Hash) ([][]byte, error)
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM
