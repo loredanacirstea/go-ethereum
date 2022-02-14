@@ -96,6 +96,7 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{20}): &proxyPrecompile{},
 	common.BytesToAddress([]byte{21}): &introspection{},
 	common.BytesToAddress([]byte{22}): &ipfsAccess{},
+	common.BytesToAddress([]byte{24}): &ipldAccess{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -1276,4 +1277,51 @@ func getFromTransaction(evm *EVM, blockNumber uint64, transactionIndex uint64, f
 	fmt.Println("-------introspection--getFromTransaction encodedResult----", encodedResult)
 
 	return encodedResult, nil
+}
+
+// ipldAccess implements IBC access
+type ipldAccess struct{}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+func (c *ipldAccess) RequiredGas(input []byte) uint64 {
+	return params.EcrecoverGas
+}
+
+func (c *ipldAccess) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	signature := common.Bytes2Hex(input[0:4])
+	callInput := input[4:]
+	contentEnd := 64 + new(big.Int).SetBytes(callInput[32:64]).Uint64()
+	content := callInput[64:contentEnd]
+
+	fmt.Println("--ipldPrecompile--", signature, content, callInput)
+	var result []byte
+	var err error
+
+	switch signature {
+	case "94f47146": // put(bytes)
+		result, err = evm.Ipfs.IpldPut(content)
+	case "83710aaa": // get(bytes,bytes)
+		key := make([]byte, 32)
+		result, err = evm.Ipfs.IpldGet(content, key)
+	default:
+		return nil, errors.New("invalid ipldAccess function")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("--ipldAccess-result--", result)
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+	encodedResult = append(encodedResult, result...)
+
+	padding := 32 - len(encodedResult)%32
+	encodedResult = append(encodedResult, make([]byte, padding)...)
+
+	fmt.Println("--ipfsPrecompile result--", encodedResult)
+	return encodedResult, err
 }

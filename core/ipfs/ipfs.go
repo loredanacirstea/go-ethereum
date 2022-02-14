@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	cid "github.com/ipfs/go-cid"
+	// shell "github.com/ipfs/go-ipfs-api"
+	options "github.com/ipfs/go-ipfs-api/options"
 	config "github.com/ipfs/go-ipfs-config"
 	files "github.com/ipfs/go-ipfs-files"
 	"github.com/ipfs/go-ipfs/core"
@@ -22,15 +24,56 @@ import (
 	icorepath "github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	"github.com/ipld/go-ipld-prime/codec/dagjson"
+	"github.com/ipld/go-ipld-prime/linking"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipld/go-ipld-prime/node/basicnode"
+	bsadapter "github.com/ipld/go-ipld-prime/storage/bsadapter"
 )
 
+// var sh *shell.Shell
+
 type IpfsContext struct {
-	value uint
-	node  icore.CoreAPI
-	ctx   context.Context
+	value      uint
+	node       icore.CoreAPI
+	blockstore blockstore.GCBlockstore
+	ctx        context.Context
 }
 
+// type ExtendedCoreApiStruct struct {
+// 	// core       *coreapi.CoreAPI
+// 	core       *icore.CoreAPI
+// 	blockstore blockstore.GCBlockstore
+// }
+
+// type ExtendedCoreApi interface {
+// 	icore.CoreAPI
+// 	BlockStore() blockstore.GCBlockstore
+// }
+
+// func (s *ExtendedCoreApiStruct) BlockStore() blockstore.GCBlockstore {
+// 	return s.blockstore
+// }
+
 func NewIpfs() *IpfsContext {
+
+	// r := strings.NewReader(`{"hey":"it works!","yes": true}`)
+	// fmt.Println("--DagPutWithOpts-r--", r)
+
+	// np := basicnode.Prototype.Any // Pick a stle for the in-memory data.
+	// nb := np.NewBuilder()         // Create a builder.
+	// dagjson.Decode(nb, r)         // Hand the builder to decoding -- decoding will fill it in!
+
+	// fmt.Println("--DagPutWithOpts-nb--", nb)
+
+	// n := nb.Build() // Call 'Build' to get the resulting Node.  (It's immutable!)
+
+	// fmt.Println("--DagPutWithOpts-n--", n)
+
+	// fmt.Printf("the data decoded was a %s kind\n", n.Kind())
+	// fmt.Printf("the length of the node is %d\n", n.Length())
 
 	// flag.Parse()
 	fmt.Println("-- Getting an IPFS node running -- ")
@@ -41,7 +84,7 @@ func NewIpfs() *IpfsContext {
 
 	// Spawn a node using the default path (~/.ipfs), assuming that a repo exists there already
 	fmt.Println("Spawning node on default repo")
-	ipfs, err := spawnEphemeral(ctx)
+	ipfs, blockstore, err := spawnEphemeral(ctx)
 	if err != nil {
 		panic(fmt.Errorf("failed to spawnDefault node: %s", err))
 	}
@@ -96,15 +139,17 @@ func NewIpfs() *IpfsContext {
 	}()
 
 	return &IpfsContext{
-		value: 3,
-		node:  ipfs,
-		ctx:   ctx,
+		value:      3,
+		node:       ipfs,
+		ctx:        ctx,
+		blockstore: blockstore,
 	}
 }
 
-func (s *IpfsContext) GetValue() uint       { return s.value }
-func (s *IpfsContext) Node() icore.CoreAPI  { return s.node }
-func (s *IpfsContext) Ctx() context.Context { return s.ctx }
+func (s *IpfsContext) GetValue() uint                      { return s.value }
+func (s *IpfsContext) Node() icore.CoreAPI                 { return s.node }
+func (s *IpfsContext) Ctx() context.Context                { return s.ctx }
+func (s *IpfsContext) Blockstore() blockstore.GCBlockstore { return s.blockstore }
 
 func (s *IpfsContext) SaveFile(content []byte) ([]byte, error) {
 	someFile := files.NewBytesFile(content)
@@ -136,6 +181,147 @@ func (s *IpfsContext) LoadFile(cidBytes []byte) ([]byte, error) {
 	// fmt.Printf("data %s", newStr)
 	return result, nil
 }
+
+func (s *IpfsContext) IpldPut(content []byte) ([]byte, error) {
+	return s.DagPutWithOpts(content, options.Dag.InputCodec("json"), options.Dag.StoreCodec("cbor"))
+}
+
+func (s *IpfsContext) IpldGet(content []byte, key []byte) ([]byte, error) {
+	// someFile := files.NewBytesFile(content)
+	// cidFile, err := s.Node().Unixfs().Add(s.Ctx(), someFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// fmt.Printf("Added file to IPFS with CID %s\n", cidFile.String())
+	// return cidFile.Cid().Bytes(), nil
+	return nil, nil
+}
+
+func (s *IpfsContext) DagPutWithOpts(data []byte, opts ...options.DagPutOption) ([]byte, error) {
+	r := bytes.NewReader(data)
+	// r := strings.NewReader(`{"hey":"it works!","yes": true}`)
+	// fr := files.NewReaderFile(r)
+	// slf := files.NewSliceDirectory([]files.DirEntry{files.FileEntry("", fr)})
+	// fileReader := files.NewMultiFileReader(slf, true)
+
+	fmt.Println("--DagPutWithOpts-r--", r)
+
+	np := basicnode.Prototype.Any // Pick a stle for the in-memory data.
+	nb := np.NewBuilder()         // Create a builder.
+	dagjson.Decode(nb, r)         // Hand the builder to decoding -- decoding will fill it in!
+	// raw.Decode(nb, r)
+
+	fmt.Println("--DagPutWithOpts-nb--", nb)
+
+	n := nb.Build() // Call 'Build' to get the resulting Node.  (It's immutable!)
+
+	fmt.Println("--DagPutWithOpts-n--", n)
+
+	fmt.Printf("the data decoded was a %s kind\n", n.Kind())
+	fmt.Printf("the length of the node is %d\n", n.Length())
+
+	// var store = memstore.Store{}
+	lsys := cidlink.DefaultLinkSystem()
+
+	fmt.Println("--DagPutWithOpts-lsys--", lsys)
+
+	// store := s.Node().Block()
+
+	store := &bsadapter.Adapter{
+		Wrapped: s.Blockstore(),
+	}
+
+	lsys.SetWriteStorage(store)
+	lp := cidlink.LinkPrototype{Prefix: cid.Prefix{
+		// Version: 1, // Usually '1'.
+		Version: 0,
+		// Codec:    0x71, // 0x71 means "dag-cbor" -- See the multicodecs table: https://github.com/multiformats/multicodec/
+		Codec: 0x0129, // dag-json
+		// Codec: 0x70, // dag protobuf
+		// Codec: 0x55, // raw
+		// MhType:   0x13, // 0x20 means "sha2-512" -- See the multicodecs table: https://github.com/multiformats/multicodec/
+		MhType: 0x12, // sha2-256
+		// MhLength: 64,   // sha2-512 hash has a 64-byte sum.
+		MhLength: 32, //
+	}}
+
+	fmt.Println("--DagPutWithOpts-lp--", lp)
+
+	lnk, err := lsys.Store(
+		linking.LinkContext{}, // The zero value is fine.  Configure it it you want cancellability or other features.
+		lp,                    // The LinkPrototype says what codec and hashing to use.
+		n,                     // And here's our data.
+	)
+	fmt.Println("--DagPutWithOpts-lnk--", lnk)
+	if err != nil {
+		return nil, err
+	}
+
+	// That's it!  We got a link.
+	fmt.Printf("link: %s\n", lnk)
+	fmt.Printf("concrete type: `%T`\n", lnk)
+	fmt.Println("lnk.String()", lnk.String(), lnk.Binary())
+
+	return []byte(lnk.String()), nil
+
+	// lnk := cidlink.LinkPrototype{Prefix: cid.Prefix{
+	// 	Version:  1,
+	// 	Codec:    0x71,
+	// 	MhType:   0x13,
+	// 	MhLength: 4,
+	// }}.BuildLink([]byte{1, 2, 3, 4})
+
+	// s.Node().Dag().Add(s.Ctx(), n)
+
+	// linking.LinkSystem, Store, Load
+	// s.Node().Dag().
+
+	//Request("dag/put").
+	// 		Option("input-codec", cfg.InputCodec).
+	// 		Option("store-codec", cfg.StoreCodec).
+	// 		Option("pin", cfg.Pin).
+	// 		Option("hash", cfg.Hash).
+	// 		Body(fileReader).
+
+	// someFile := files.NewBytesFile(content)
+	// cidFile, err := s.Node().Unixfs().Add(s.Ctx(), someFile)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// fmt.Printf("Added file to IPFS with CID %s\n", cidFile.String())
+	// return cidFile.Cid().Bytes(), nil
+
+}
+
+// func (s *IpfsContext) DagPutWithOpts(data []byte, opts ...options.DagPutOption) ([]byte, error) {
+// 	cfg, err := options.DagPutOptions(opts...)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	r := bytes.NewReader(data)
+// 	fr := files.NewReaderFile(r)
+// 	slf := files.NewSliceDirectory([]files.DirEntry{files.FileEntry("", fr)})
+// 	fileReader := files.NewMultiFileReader(slf, true)
+
+// 	var out struct {
+// 		Cid struct {
+// 			Target string `json:"/"`
+// 		}
+// 	}
+
+// 	// return out.Cid.Target, shell.
+// 	return out.Cid.Bytes(), shell.
+// 		Request("dag/put").
+// 		Option("input-codec", cfg.InputCodec).
+// 		Option("store-codec", cfg.StoreCodec).
+// 		Option("pin", cfg.Pin).
+// 		Option("hash", cfg.Hash).
+// 		Body(fileReader).
+// 		Exec(context.Background(), &out)
+// }
 
 // var flagExp = flag.Bool("experimental", false, "enable experimental features")
 
@@ -195,12 +381,12 @@ func createTempRepo() (string, error) {
 	return repoPath, nil
 }
 
-func createNode(ctx context.Context, repoPath string) (icore.CoreAPI, error) {
+func createNode(ctx context.Context, repoPath string) (icore.CoreAPI, blockstore.GCBlockstore, error) {
 	fmt.Println("--Open repo", repoPath)
 	// Open the repo
 	repo, err := fsrepo.Open(repoPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Construct the node
@@ -214,8 +400,10 @@ func createNode(ctx context.Context, repoPath string) (icore.CoreAPI, error) {
 
 	node, err := core.NewNode(ctx, nodeOptions)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	// fmt.Println("-----nodeOptions---", node.Blockstore)
 
 	fmt.Println("-----node IsOnline", node.IsOnline)
 	conf, err := node.Repo.Config()
@@ -224,19 +412,23 @@ func createNode(ctx context.Context, repoPath string) (icore.CoreAPI, error) {
 	fmt.Println("---cfg.BootstrapPeers()", peers, err2)
 
 	// Attach the Core API to the constructed node
-	return coreapi.NewCoreAPI(node)
+	newnode, err := coreapi.NewCoreAPI(node)
+	if err != nil {
+		return nil, nil, err
+	}
+	return newnode, node.Blockstore, nil
 }
 
 // Spawns a node on the default repo location, if the repo exists
-func spawnDefault(ctx context.Context) (icore.CoreAPI, error) {
+func spawnDefault(ctx context.Context) (icore.CoreAPI, blockstore.GCBlockstore, error) {
 	defaultPath, err := config.PathRoot()
 	if err != nil {
 		// shouldn't be possible
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := setupPlugins(defaultPath); err != nil {
-		return nil, err
+		return nil, nil, err
 
 	}
 
@@ -244,15 +436,15 @@ func spawnDefault(ctx context.Context) (icore.CoreAPI, error) {
 }
 
 // Spawns a node to be used just for this run (i.e. creates a tmp repo)
-func spawnEphemeral(ctx context.Context) (icore.CoreAPI, error) {
+func spawnEphemeral(ctx context.Context) (icore.CoreAPI, blockstore.GCBlockstore, error) {
 	if err := setupPlugins(""); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create a Temporary Repo
 	repoPath, err := createTempRepo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp repo: %s", err)
+		return nil, nil, fmt.Errorf("failed to create temp repo: %s", err)
 	}
 
 	// Spawning an ephemeral IPFS node

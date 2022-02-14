@@ -44,6 +44,7 @@ require (
 	github.com/ipfs/go-cid v0.1.0 // indirect
 	github.com/ipfs/go-filestore v1.1.0 // indirect
 	github.com/ipfs/go-ipfs v0.11.0
+	github.com/ipfs/go-ipfs-api v0.3.0 // indirect
 	github.com/ipfs/go-ipfs-blockstore v1.1.2 // indirect
 	github.com/ipfs/go-ipfs-config v0.18.0
 	github.com/ipfs/go-ipfs-files v0.0.9
@@ -52,6 +53,7 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.0 // indirect
 	github.com/ipfs/interface-go-ipfs-core v0.5.2
 	github.com/ipld/go-ipld-prime v0.14.4 // indirect
+	github.com/ipld/go-ipld-prime/storage/bsadapter v0.0.0-20220213111432-c47bda61369d
 	github.com/jackpal/go-nat-pmp v1.0.2
 	github.com/jedisct1/go-minisign v0.0.0-20190909160543-45766022959e
 	github.com/julienschmidt/httprouter v1.3.0
