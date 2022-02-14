@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,6 +28,7 @@ import (
 
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipld/go-ipld-prime/codec/dagjson"
+	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/node/basicnode"
@@ -121,12 +123,9 @@ func NewIpfs() *IpfsContext {
 		"/ip4/94.130.135.167/tcp/4001/p2p/QmUEMvxS2e7iDrereVYc5SWPauXPyNwxcy9BXZrC1QTcHE",
 		"/ip4/94.130.135.167/udp/4001/quic/p2p/QmUEMvxS2e7iDrereVYc5SWPauXPyNwxcy9BXZrC1QTcHE",
 
-		// mine
+		// your
 		"/ip4/127.0.0.1/tcp/4001/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
 		"/ip4/127.0.0.1/udp/4001/quic/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
-		"/ip4/192.168.0.106/tcp/4001/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
-		"/ip4/192.168.0.106/udp/4001/quic/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
-		"/ip4/85.203.44.147/udp/4001/quic/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
 		"/ip6/::1/tcp/4001/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
 		"/ip6/::1/udp/4001/quic/p2p/Qmf4ypjr6LeTnZroCzNUedKyBjDnDZMtGy2C7xUPrsR7rx",
 	}
@@ -186,74 +185,128 @@ func (s *IpfsContext) IpldPut(content []byte) ([]byte, error) {
 	return s.DagPutWithOpts(content, options.Dag.InputCodec("json"), options.Dag.StoreCodec("cbor"))
 }
 
-func (s *IpfsContext) IpldGet(content []byte, key []byte) ([]byte, error) {
-	// someFile := files.NewBytesFile(content)
-	// cidFile, err := s.Node().Unixfs().Add(s.Ctx(), someFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
+func (s *IpfsContext) IpldGet(cidBytes []byte, key []byte) ([]byte, error) {
+	cidValue, err := cid.Parse(cidBytes)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("Fetching a file from the network with CID %s\n", cidValue.String())
 
-	// fmt.Printf("Added file to IPFS with CID %s\n", cidFile.String())
-	// return cidFile.Cid().Bytes(), nil
+	fmt.Println("--IpldGet-key--", string(key))
+
+	keyValue := string(key)
+
+	lsys := cidlink.DefaultLinkSystem()
+	store := &bsadapter.Adapter{
+		Wrapped: s.Blockstore(),
+	}
+
+	// return store.Get(s.Ctx(), keyValue)
+
+	lsys.SetReadStorage(store)
+	// lp := cidlink.LinkPrototype{Prefix: cid.Prefix{
+	// 	Version:  1,
+	// 	Codec:    0x71, // "dag-cbor"
+	// 	MhType:   0x12, // sha2-256
+	// 	MhLength: 32,   //
+	// }}.BuildLink(cidBytes)
+
+	lp := cidlink.Link{Cid: cidValue}
+	np := basicnode.Prototype.Any // Pick a stle for the in-memory data.
+
+	node, err := lsys.Load(
+		linking.LinkContext{}, // The zero value is fine.  Configure it it you want cancellability or other features.
+		lp,                    // The LinkPrototype says what codec and hashing to use.
+		np,                    // And here's our data.
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("we loaded a %s with %d entries\n", node.Kind(), node.Length(), keyValue)
+
+	node2, err := node.LookupByString(keyValue)
+
+	fmt.Printf("we loaded a %s with %d entries\n", node2.Kind(), node2.Length())
+
+	if node2.IsAbsent() {
+		return nil, nil
+	}
+	if node2.IsNull() {
+		return nil, nil
+	}
+
+	switch node2.Kind() {
+	case datamodel.Kind_Bool:
+		value, err := node2.AsBool()
+		if err != nil {
+			return nil, err
+		}
+		v := 0
+		if value {
+			v = 1
+		}
+		return new(big.Int).SetInt64(int64(v)).FillBytes(make([]byte, 32)), nil
+	case datamodel.Kind_Int:
+		value, err := node2.AsInt()
+		if err != nil {
+			return nil, err
+		}
+		return new(big.Int).SetInt64(int64(value)).FillBytes(make([]byte, 32)), nil
+	case datamodel.Kind_Float:
+		return nil, fmt.Errorf("float not supported")
+	case datamodel.Kind_String:
+		value, err := node2.AsString()
+		if err != nil {
+			return nil, err
+		}
+		return []byte(value), nil
+	case datamodel.Kind_Bytes:
+		return node2.AsBytes()
+	case datamodel.Kind_List:
+		return nil, fmt.Errorf("list not supported")
+	case datamodel.Kind_Map:
+		return nil, fmt.Errorf("map not supported")
+	case datamodel.Kind_Link:
+		return nil, fmt.Errorf("link not supported")
+	default:
+		return nil, nil
+	}
 	return nil, nil
 }
 
 func (s *IpfsContext) DagPutWithOpts(data []byte, opts ...options.DagPutOption) ([]byte, error) {
 	r := bytes.NewReader(data)
-	// r := strings.NewReader(`{"hey":"it works!","yes": true}`)
-	// fr := files.NewReaderFile(r)
-	// slf := files.NewSliceDirectory([]files.DirEntry{files.FileEntry("", fr)})
-	// fileReader := files.NewMultiFileReader(slf, true)
-
-	fmt.Println("--DagPutWithOpts-r--", r)
 
 	np := basicnode.Prototype.Any // Pick a stle for the in-memory data.
 	nb := np.NewBuilder()         // Create a builder.
 	dagjson.Decode(nb, r)         // Hand the builder to decoding -- decoding will fill it in!
 	// raw.Decode(nb, r)
 
-	fmt.Println("--DagPutWithOpts-nb--", nb)
-
 	n := nb.Build() // Call 'Build' to get the resulting Node.  (It's immutable!)
-
-	fmt.Println("--DagPutWithOpts-n--", n)
 
 	fmt.Printf("the data decoded was a %s kind\n", n.Kind())
 	fmt.Printf("the length of the node is %d\n", n.Length())
 
-	// var store = memstore.Store{}
 	lsys := cidlink.DefaultLinkSystem()
-
-	fmt.Println("--DagPutWithOpts-lsys--", lsys)
-
-	// store := s.Node().Block()
-
 	store := &bsadapter.Adapter{
 		Wrapped: s.Blockstore(),
 	}
 
 	lsys.SetWriteStorage(store)
+	// https://github.com/multiformats/multicodec/
 	lp := cidlink.LinkPrototype{Prefix: cid.Prefix{
-		// Version: 1, // Usually '1'.
-		Version: 0,
-		// Codec:    0x71, // 0x71 means "dag-cbor" -- See the multicodecs table: https://github.com/multiformats/multicodec/
-		Codec: 0x0129, // dag-json
-		// Codec: 0x70, // dag protobuf
-		// Codec: 0x55, // raw
-		// MhType:   0x13, // 0x20 means "sha2-512" -- See the multicodecs table: https://github.com/multiformats/multicodec/
-		MhType: 0x12, // sha2-256
-		// MhLength: 64,   // sha2-512 hash has a 64-byte sum.
-		MhLength: 32, //
+		Version:  1,
+		Codec:    0x71, // "dag-cbor"
+		MhType:   0x12, // sha2-256
+		MhLength: 32,   //
 	}}
-
-	fmt.Println("--DagPutWithOpts-lp--", lp)
 
 	lnk, err := lsys.Store(
 		linking.LinkContext{}, // The zero value is fine.  Configure it it you want cancellability or other features.
 		lp,                    // The LinkPrototype says what codec and hashing to use.
 		n,                     // And here's our data.
 	)
-	fmt.Println("--DagPutWithOpts-lnk--", lnk)
 	if err != nil {
 		return nil, err
 	}
@@ -264,64 +317,7 @@ func (s *IpfsContext) DagPutWithOpts(data []byte, opts ...options.DagPutOption) 
 	fmt.Println("lnk.String()", lnk.String(), lnk.Binary())
 
 	return []byte(lnk.String()), nil
-
-	// lnk := cidlink.LinkPrototype{Prefix: cid.Prefix{
-	// 	Version:  1,
-	// 	Codec:    0x71,
-	// 	MhType:   0x13,
-	// 	MhLength: 4,
-	// }}.BuildLink([]byte{1, 2, 3, 4})
-
-	// s.Node().Dag().Add(s.Ctx(), n)
-
-	// linking.LinkSystem, Store, Load
-	// s.Node().Dag().
-
-	//Request("dag/put").
-	// 		Option("input-codec", cfg.InputCodec).
-	// 		Option("store-codec", cfg.StoreCodec).
-	// 		Option("pin", cfg.Pin).
-	// 		Option("hash", cfg.Hash).
-	// 		Body(fileReader).
-
-	// someFile := files.NewBytesFile(content)
-	// cidFile, err := s.Node().Unixfs().Add(s.Ctx(), someFile)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// fmt.Printf("Added file to IPFS with CID %s\n", cidFile.String())
-	// return cidFile.Cid().Bytes(), nil
-
 }
-
-// func (s *IpfsContext) DagPutWithOpts(data []byte, opts ...options.DagPutOption) ([]byte, error) {
-// 	cfg, err := options.DagPutOptions(opts...)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	r := bytes.NewReader(data)
-// 	fr := files.NewReaderFile(r)
-// 	slf := files.NewSliceDirectory([]files.DirEntry{files.FileEntry("", fr)})
-// 	fileReader := files.NewMultiFileReader(slf, true)
-
-// 	var out struct {
-// 		Cid struct {
-// 			Target string `json:"/"`
-// 		}
-// 	}
-
-// 	// return out.Cid.Target, shell.
-// 	return out.Cid.Bytes(), shell.
-// 		Request("dag/put").
-// 		Option("input-codec", cfg.InputCodec).
-// 		Option("store-codec", cfg.StoreCodec).
-// 		Option("pin", cfg.Pin).
-// 		Option("hash", cfg.Hash).
-// 		Body(fileReader).
-// 		Exec(context.Background(), &out)
-// }
 
 // var flagExp = flag.Bool("experimental", false, "enable experimental features")
 

@@ -1301,7 +1301,16 @@ func (c *ipldAccess) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, er
 	case "94f47146": // put(bytes)
 		result, err = evm.Ipfs.IpldPut(content)
 	case "83710aaa": // get(bytes,bytes)
-		key := make([]byte, 32)
+		// offset1 := new(big.Int).SetBytes(callInput[0:32]).Uint64()
+		offset2 := new(big.Int).SetBytes(callInput[32:64]).Uint64()
+		cidLength := new(big.Int).SetBytes(callInput[64:96]).Uint64()
+		cidEnd := 96 + cidLength
+		content := callInput[96:cidEnd]
+		keyEnd := offset2 + 32
+		keyLength := new(big.Int).SetBytes(callInput[offset2:keyEnd]).Uint64()
+		offset2 = offset2 + 32
+		keyEnd = offset2 + keyLength
+		key := callInput[offset2:keyEnd]
 		result, err = evm.Ipfs.IpldGet(content, key)
 	default:
 		return nil, errors.New("invalid ipldAccess function")
@@ -1310,8 +1319,6 @@ func (c *ipldAccess) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("--ipldAccess-result--", result)
 
 	encodedResult := append(
 		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
