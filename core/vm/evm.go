@@ -42,7 +42,7 @@ type (
 	GetHashFunc func(uint64) common.Hash
 )
 
-func getPrecompiles(chainRules params.Rules) map[common.Address]PrecompiledContract {
+func GetPrecompiles(chainRules params.Rules) map[common.Address]PrecompiledContract {
 	var precompiles map[common.Address]PrecompiledContract
 	switch {
 	case chainRules.IsBerlin:
@@ -143,7 +143,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 	chainRules := chainConfig.Rules(blockCtx.BlockNumber)
 	precompiles := args[0]
 	if precompiles == nil {
-		precompiles = getPrecompiles(chainRules)
+		precompiles = GetPrecompiles(chainRules)
 	}
 	evm := &EVM{
 		Precompiles: precompiles,
