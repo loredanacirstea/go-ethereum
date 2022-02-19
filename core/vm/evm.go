@@ -140,7 +140,7 @@ type EVM struct {
 // NewEVM returns a new EVM. The returned EVM is not thread safe and should
 // only ever be used *once*.
 func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig *params.ChainConfig, config Config, args ...map[common.Address]PrecompiledContract) *EVM {
-	chainRules := chainConfig.Rules(blockCtx.BlockNumber)
+	chainRules := chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil)
 	precompiles := args[0]
 	if precompiles == nil {
 		precompiles = GetPrecompiles(chainRules)
@@ -152,7 +152,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		StateDB:     statedb,
 		Config:      config,
 		chainConfig: chainConfig,
-		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil),
+		chainRules:  chainRules,
 	}
 	evm.interpreter = NewEVMInterpreter(evm, config)
 	return evm
