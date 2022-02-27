@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/holiman/uint256"
 )
 
 // Config are the configuration options for the Interpreter
@@ -52,6 +53,15 @@ type keccakState interface {
 	Read([]byte) (int, error)
 }
 
+type InterpretContext struct {
+	ReturnPc uint64
+	Reads    uint64
+	Writes   uint64
+	Calls    uint64
+	Memsize  uint64
+	Stack    []uint256.Int
+}
+
 // EVMInterpreter represents an EVM interpreter
 type EVMInterpreter struct {
 	evm *EVM
@@ -60,8 +70,9 @@ type EVMInterpreter struct {
 	hasher    keccakState // Keccak256 hasher instance shared across opcodes
 	hasherBuf common.Hash // Keccak256 hasher result array shared aross opcodes
 
-	readOnly   bool   // Whether to throw on stateful modifications
-	returnData []byte // Last CALL's return data for subsequent reuse
+	readOnly         bool   // Whether to throw on stateful modifications
+	returnData       []byte // Last CALL's return data for subsequent reuse
+	InterpretContext *InterpretContext
 }
 
 // NewEVMInterpreter returns a new instance of the Interpreter.
@@ -114,6 +125,14 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 // considered a revert-and-consume-all-gas operation except for
 // ErrExecutionReverted which means revert-and-keep-gas-left.
 func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (ret []byte, err error) {
+	return in.run(contract, input, readOnly, nil)
+}
+
+func (in *EVMInterpreter) RunWithInitialState(contract *Contract, input []byte, readOnly bool, stackData *[]uint256.Int) (ret []byte, err error) {
+	return in.run(contract, input, readOnly, stackData)
+}
+
+func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, initStack *[]uint256.Int) (ret []byte, err error) {
 
 	// Increment the call depth which is restricted to 1024
 	in.evm.depth++
@@ -154,6 +173,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		gasCopy uint64 // for EVMLogger to log gas remaining before execution
 		logged  bool   // deferred EVMLogger should ignore already logged steps
 		res     []byte // result of the opcode execution function
+		reads   uint64
+		writes  uint64
+		calls   uint64
 	)
 	// Don't move this deferrred function, it's placed before the capturestate-deferred method,
 	// so that it get's executed _after_: the capturestate needs the stacks before
@@ -162,6 +184,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		returnStack(stack)
 	}()
 	contract.Input = input
+	if initStack != nil {
+		stack.data = append(stack.Data(), *initStack...)
+	}
 
 	if in.cfg.Debug {
 		defer func() {
@@ -188,6 +213,16 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		op = contract.GetOp(pc)
 		operation := in.cfg.JumpTable[op]
 		cost = operation.constantGas // For tracing
+		if op == SLOAD {
+			reads += 1
+		}
+		if op == SSTORE {
+			writes += 1
+		}
+		if op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL {
+			calls += 1
+		}
+
 		// Validate stack
 		if sLen := stack.len(); sLen < operation.minStack {
 			return nil, &ErrStackUnderflow{stackLen: sLen, required: operation.minStack}
@@ -237,6 +272,15 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			break
 		}
 		pc++
+	}
+
+	in.InterpretContext = &InterpretContext{
+		ReturnPc: pc,
+		Reads:    reads,
+		Writes:   writes,
+		Calls:    calls,
+		Memsize:  uint64(mem.Len()),
+		Stack:    stack.Data(),
 	}
 
 	if err == errStopToken {
