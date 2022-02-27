@@ -21,8 +21,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
+	"golang.org/x/crypto/sha3"
 )
 
 // Config are the configuration options for the Interpreter
@@ -54,12 +56,14 @@ type keccakState interface {
 }
 
 type InterpretContext struct {
-	ReturnPc uint64
-	Reads    uint64
-	Writes   uint64
-	Calls    uint64
-	Memsize  uint64
-	Stack    []uint256.Int
+	ReturnPc  uint64
+	Reads     uint64
+	Writes    uint64
+	Calls     uint64
+	Memsize   uint64
+	Stack     []uint256.Int
+	WriteHash common.Hash
+	ReadHash  common.Hash
 }
 
 // EVMInterpreter represents an EVM interpreter
@@ -128,11 +132,11 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	return in.run(contract, input, readOnly, nil)
 }
 
-func (in *EVMInterpreter) RunWithInitialState(contract *Contract, input []byte, readOnly bool, stackData *[]uint256.Int) (ret []byte, err error) {
-	return in.run(contract, input, readOnly, stackData)
+func (in *EVMInterpreter) RunWithInitialState(contract *Contract, input []byte, readOnly bool, stateContext *StateContext) (ret []byte, err error) {
+	return in.run(contract, input, readOnly, stateContext)
 }
 
-func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, initStack *[]uint256.Int) (ret []byte, err error) {
+func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, stateContext *StateContext) (ret []byte, err error) {
 
 	// Increment the call depth which is restricted to 1024
 	in.evm.depth++
@@ -184,9 +188,13 @@ func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, i
 		returnStack(stack)
 	}()
 	contract.Input = input
-	if initStack != nil {
-		stack.data = append(stack.Data(), *initStack...)
+	if stateContext != nil && stateContext.StackData != nil {
+		stack.data = append(stack.Data(), *stateContext.StackData...)
 	}
+	hasherReads := sha3.NewLegacyKeccak256().(crypto.KeccakState)
+	hasherWrites := sha3.NewLegacyKeccak256().(crypto.KeccakState)
+	hasherReads.Write(stateContext.ReadHash.Bytes())
+	hasherWrites.Write(stateContext.WriteHash.Bytes())
 
 	if in.cfg.Debug {
 		defer func() {
@@ -215,9 +223,19 @@ func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, i
 		cost = operation.constantGas // For tracing
 		if op == SLOAD {
 			reads += 1
+			if stateContext != nil {
+				loc := stack.Back(0).Bytes32()
+				hasherReads.Write(loc[:])
+			}
 		}
 		if op == SSTORE {
 			writes += 1
+			if stateContext != nil {
+				loc := stack.Back(0).Bytes32()
+				val := stack.Back(1).Bytes32()
+				hasherWrites.Write(loc[:])
+				hasherWrites.Write(val[:])
+			}
 		}
 		if op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL {
 			calls += 1
@@ -271,16 +289,28 @@ func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, i
 		if err != nil {
 			break
 		}
+		if op == SLOAD && stateContext != nil {
+			val := stack.Back(0).Bytes32()
+			hasherReads.Write(val[:])
+		}
 		pc++
 	}
 
+	whash := make([]byte, 32)
+	hasherWrites.Read(whash)
+
+	rhash := make([]byte, 32)
+	hasherReads.Read(rhash)
+
 	in.InterpretContext = &InterpretContext{
-		ReturnPc: pc,
-		Reads:    reads,
-		Writes:   writes,
-		Calls:    calls,
-		Memsize:  uint64(mem.Len()),
-		Stack:    stack.Data(),
+		ReturnPc:  pc,
+		Reads:     reads,
+		Writes:    writes,
+		Calls:     calls,
+		Memsize:   uint64(mem.Len()),
+		Stack:     stack.Data(),
+		WriteHash: common.BytesToHash(whash),
+		ReadHash:  common.BytesToHash(rhash),
 	}
 
 	if err == errStopToken {

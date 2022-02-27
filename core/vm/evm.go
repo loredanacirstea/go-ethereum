@@ -137,6 +137,12 @@ type EVM struct {
 	callGasTemp uint64
 }
 
+type StateContext struct {
+	StackData *[]uint256.Int
+	ReadHash  common.Hash
+	WriteHash common.Hash
+}
+
 // NewEVM returns a new EVM. The returned EVM is not thread safe and should
 // only ever be used *once*.
 func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig *params.ChainConfig, config Config, args ...map[common.Address]PrecompiledContract) *EVM {
@@ -268,7 +274,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 // parameters. It also handles any necessary value transfer required and takes
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
-func (evm *EVM) CallWithBytecode(caller ContractRef, addr common.Address, runtime []byte, input []byte, gas uint64, value *big.Int, stackData *[]uint256.Int) (ret []byte, leftOverGas uint64, err error) {
+func (evm *EVM) CallWithState(caller ContractRef, addr common.Address, runtime []byte, input []byte, gas uint64, value *big.Int, stateContext *StateContext) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -325,7 +331,7 @@ func (evm *EVM) CallWithBytecode(caller ContractRef, addr common.Address, runtim
 		// The depth-check is already done
 		contract := NewContract(caller, AccountRef(addrCopy), value, gas)
 		contract.SetCallCode(&addrCopy, codehash, code)
-		ret, err = evm.interpreter.RunWithInitialState(contract, input, false, stackData)
+		ret, err = evm.interpreter.RunWithInitialState(contract, input, false, stateContext)
 		gas = contract.Gas
 	}
 
