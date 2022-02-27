@@ -193,8 +193,10 @@ func (in *EVMInterpreter) run(contract *Contract, input []byte, readOnly bool, s
 	}
 	hasherReads := sha3.NewLegacyKeccak256().(crypto.KeccakState)
 	hasherWrites := sha3.NewLegacyKeccak256().(crypto.KeccakState)
-	hasherReads.Write(stateContext.ReadHash.Bytes())
-	hasherWrites.Write(stateContext.WriteHash.Bytes())
+	if stateContext != nil {
+		hasherReads.Write(stateContext.ReadHash.Bytes())
+		hasherWrites.Write(stateContext.WriteHash.Bytes())
+	}
 
 	if in.cfg.Debug {
 		defer func() {
