@@ -147,9 +147,11 @@ type StateContext struct {
 // only ever be used *once*.
 func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig *params.ChainConfig, config Config, args ...map[common.Address]PrecompiledContract) *EVM {
 	chainRules := chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil)
-	precompiles := args[0]
-	if precompiles == nil {
+	var precompiles map[common.Address]PrecompiledContract
+	if len(args) == 0 {
 		precompiles = GetPrecompiles(chainRules)
+	} else {
+		precompiles = args[0]
 	}
 	evm := &EVM{
 		Precompiles: precompiles,
