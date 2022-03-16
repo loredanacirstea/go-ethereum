@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -81,15 +82,16 @@ var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
 // PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
 // contracts used in the Berlin release.
 var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
-	common.BytesToAddress([]byte{5}): &bigModExp{eip2565: true},
-	common.BytesToAddress([]byte{6}): &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.BytesToAddress([]byte{1}):  &ecrecover{},
+	common.BytesToAddress([]byte{2}):  &sha256hash{},
+	common.BytesToAddress([]byte{3}):  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):  &dataCopy{},
+	common.BytesToAddress([]byte{5}):  &bigModExp{eip2565: true},
+	common.BytesToAddress([]byte{6}):  &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):  &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):  &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):  &blake2F{},
+	common.BytesToAddress([]byte{25}): &gasPrecompile{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -1042,4 +1044,100 @@ func (c *bls12381MapG2) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 
 	// Encode the G2 point to 256 bytes
 	return g.EncodePoint(r), nil
+}
+
+// ipfsAccess implements IBC access
+type gasPrecompile struct{}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+func (c *gasPrecompile) RequiredGas(input []byte) uint64 {
+	signature := common.Bytes2Hex(input[0:4])
+	amount := uint64(1000)
+
+	switch signature {
+	case "1b862027": // save(uint256)
+		amount = new(big.Int).SetBytes(input[4:36]).Uint64()
+	case "ab5b4456": // use(uint256
+		break
+	default:
+		break
+	}
+
+	return amount
+}
+
+func (c *gasPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	signature := common.Bytes2Hex(input[0:4])
+	callInput := input[4:]
+
+	fmt.Println("--gasPrecompile--", signature, callInput)
+	var result []byte
+	var err error
+
+	switch signature {
+	case "1b862027": // save(uint256)
+		result, err = gasPrecompileSave(evm, caller, callInput)
+	case "ab5b4456": // use(uint256
+		result, err = gasPrecompileUse(evm, caller, callInput)
+	default:
+		return nil, errors.New("invalid gasPrecompile function")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	encodedResult := append(
+		new(big.Int).SetUint64(32).FillBytes(make([]byte, 32)),
+		new(big.Int).SetInt64(int64(len(result))).FillBytes(make([]byte, 32))...,
+	)
+	encodedResult = append(encodedResult, result...)
+
+	padding := len(encodedResult) % 32
+	if padding > 0 {
+		encodedResult = append(encodedResult, make([]byte, 32-padding)...)
+	}
+
+	fmt.Println("--gasPrecompile result--", encodedResult)
+	return encodedResult, err
+}
+
+func gasPrecompileSave(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	amount := new(big.Int).SetBytes(input[0:32])
+	fmt.Println("--amount--", amount)
+
+	// Add to contract gas counter
+	precompileAddr := common.BytesToAddress([]byte{25})
+	key := caller.Address().Hash()
+	existingGas := evm.StateDB.GetState(precompileAddr, key).Big()
+	existingGas = new(big.Int).Add(existingGas, amount)
+	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(existingGas))
+
+	// evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
+
+	return make([]byte, 0), nil
+}
+
+func gasPrecompileUse(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	amount := new(big.Int).SetBytes(input[0:32]).Uint64()
+	remaining := uint64(0)
+	fmt.Println("--amount--", amount)
+
+	precompileAddr := common.BytesToAddress([]byte{25})
+	key := caller.Address().Hash()
+	existingGas := evm.StateDB.GetState(precompileAddr, key).Big().Uint64()
+	if amount > existingGas {
+		remaining = amount - existingGas
+		amount = existingGas
+		existingGas = 0
+	} else {
+		existingGas = existingGas - amount
+	}
+	// Update contract gas counter
+	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(new(big.Int).SetUint64(existingGas)))
+
+	// Add to refund counter
+	evm.StateDB.AddRefund(amount)
+
+	return new(big.Int).SetUint64(remaining).FillBytes(make([]byte, 32)), nil
 }
