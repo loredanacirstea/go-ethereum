@@ -1077,7 +1077,7 @@ func (c *gasPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 	switch signature {
 	case "1b862027": // save(uint256)
 		result, err = gasPrecompileSave(evm, caller, callInput)
-	case "ab5b4456": // use(uint256
+	case "9c806fae": // use(uint256,uint256)
 		result, err = gasPrecompileUse(evm, caller, callInput)
 	default:
 		return nil, errors.New("invalid gasPrecompile function")
@@ -1102,42 +1102,53 @@ func (c *gasPrecompile) Run(evm *EVM, caller ContractRef, input []byte) ([]byte,
 	return encodedResult, err
 }
 
+// TODO subtract directly from the origin's balance?
+// Now we just burn the gas at the provided gasPrice, which has the advantage of the user
+// better controlling how much he wants to spend
 func gasPrecompileSave(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
+	precompileAddr := common.BytesToAddress([]byte{25})
+	if evm.StateDB.Empty(precompileAddr) {
+		evm.StateDB.SetCode(precompileAddr, precompileAddr[:])
+	}
+	key := caller.Address().Hash()
 	amount := new(big.Int).SetBytes(input[0:32])
-	fmt.Println("--amount--", amount)
+	amountStored := new(big.Int).Mul(amount, evm.TxContext.GasPrice)
+	fmt.Println("--amount--", amount, evm.TxContext.GasPrice, amountStored)
 
 	// Add to contract gas counter
-	precompileAddr := common.BytesToAddress([]byte{25})
-	key := caller.Address().Hash()
-	existingGas := evm.StateDB.GetState(precompileAddr, key).Big()
-	existingGas = new(big.Int).Add(existingGas, amount)
-	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(existingGas))
+	fuel := evm.StateDB.GetState(precompileAddr, key).Big()
+	fuel = new(big.Int).Add(fuel, amountStored)
+	fmt.Println("--new fuel--", fuel)
 
-	// evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
+	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(fuel))
 
-	return make([]byte, 0), nil
+	return amountStored.FillBytes(make([]byte, 32)), nil
 }
 
 func gasPrecompileUse(evm *EVM, caller ContractRef, input []byte) ([]byte, error) {
-	amount := new(big.Int).SetBytes(input[0:32]).Uint64()
-	remaining := uint64(0)
-	fmt.Println("--amount--", amount)
-
 	precompileAddr := common.BytesToAddress([]byte{25})
 	key := caller.Address().Hash()
-	existingGas := evm.StateDB.GetState(precompileAddr, key).Big().Uint64()
-	if amount > existingGas {
-		remaining = amount - existingGas
-		amount = existingGas
-		existingGas = 0
+	amount := new(big.Int).SetBytes(input[0:32])
+	gasPrice := new(big.Int).SetBytes(input[32:64])
+	fuelNeeded := new(big.Int).Mul(amount, gasPrice).Uint64()
+	uncovered := uint64(0)
+	fuel := evm.StateDB.GetState(precompileAddr, key).Big().Uint64()
+	fmt.Println("-gasPrecompileUse-", amount, key, fuel)
+
+	if fuelNeeded > fuel {
+		uncovered = fuelNeeded - fuel
+		fuelNeeded = fuel
+		fuel = 0
 	} else {
-		existingGas = existingGas - amount
+		fuel = fuel - fuelNeeded
 	}
+	fmt.Println("--fuel,fuelNeeded,uncovered--", fuel, fuelNeeded, uncovered)
+
 	// Update contract gas counter
-	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(new(big.Int).SetUint64(existingGas)))
+	evm.StateDB.SetState(precompileAddr, key, common.BigToHash(new(big.Int).SetUint64(fuel)))
 
-	// Add to refund counter
-	evm.StateDB.AddRefund(amount)
+	// Increase sender's balance
+	evm.StateDB.AddBalance(evm.TxContext.Origin, new(big.Int).SetUint64(fuelNeeded))
 
-	return new(big.Int).SetUint64(remaining).FillBytes(make([]byte, 32)), nil
+	return new(big.Int).SetUint64(uncovered).FillBytes(make([]byte, 32)), nil
 }
