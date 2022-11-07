@@ -42,17 +42,7 @@ type (
 )
 
 func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
-	var precompiles map[common.Address]PrecompiledContract
-	switch {
-	case evm.chainRules.IsBerlin:
-		precompiles = PrecompiledContractsBerlin
-	case evm.chainRules.IsIstanbul:
-		precompiles = PrecompiledContractsIstanbul
-	case evm.chainRules.IsByzantium:
-		precompiles = PrecompiledContractsByzantium
-	default:
-		precompiles = PrecompiledContractsHomestead
-	}
+	precompiles := evm.GetActivePrecompiles(evm.chainRules)
 	p, ok := precompiles[addr]
 	return p, ok
 }
@@ -121,6 +111,8 @@ type EVM struct {
 	// available gas is calculated in gasCall* according to the 63/64 rule and later
 	// applied in opCall*.
 	callGasTemp uint64
+
+	GetActivePrecompiles func(rules params.Rules) map[common.Address]PrecompiledContract
 }
 
 // NewEVM returns a new EVM. The returned EVM is not thread safe and should
@@ -135,6 +127,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil),
 	}
 	evm.interpreter = NewEVMInterpreter(evm, config)
+	evm.GetActivePrecompiles = DefaultActivePrecompileMap
 	return evm
 }
 
@@ -212,7 +205,10 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 
 	if isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		addrCopy := addr
+		precompileWrap := NewPrecompiledContractWrapper(evm, caller, AccountRef(addrCopy), value, gas)
+		ret, err = p.Run(precompileWrap, input, false)
+		gas = precompileWrap.Gas
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
@@ -275,7 +271,10 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		addrCopy := addr
+		precompileWrap := NewPrecompiledContractWrapper(evm, caller, AccountRef(addrCopy), value, gas)
+		ret, err = p.Run(precompileWrap, input, false)
+		gas = precompileWrap.Gas
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and set the code that is to be used by the EVM.
@@ -316,7 +315,10 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		addrCopy := addr
+		precompileWrap := NewPrecompiledContractWrapper(evm, caller, AccountRef(addrCopy), nil, gas)
+		ret, err = p.Run(precompileWrap, input, false)
+		gas = precompileWrap.Gas
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and make initialise the delegate values
@@ -365,7 +367,10 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 	}
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		addrCopy := addr
+		precompileWrap := NewPrecompiledContractWrapper(evm, caller, AccountRef(addrCopy), nil, gas)
+		ret, err = p.Run(precompileWrap, input, true)
+		gas = precompileWrap.Gas
 	} else {
 		// At this point, we use a copy of address. If we don't, the go compiler will
 		// leak the 'contract' to the outer scope, and make allocation for 'contract'
@@ -513,3 +518,13 @@ func (evm *EVM) Create2(caller ContractRef, code []byte, gas uint64, endowment *
 
 // ChainConfig returns the environment's chain configuration
 func (evm *EVM) ChainConfig() *params.ChainConfig { return evm.chainConfig }
+
+// ActivePrecompiles returns the precompiles enabled with the current configuration.
+func (evm *EVM) ActivePrecompiles(rules params.Rules) []common.Address {
+	precompiles := evm.GetActivePrecompiles(evm.chainRules)
+	keys := make([]common.Address, len(precompiles))
+	for k := range precompiles {
+		keys = append(keys, k)
+	}
+	return keys
+}
