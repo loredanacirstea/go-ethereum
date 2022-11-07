@@ -42,7 +42,7 @@ type PrecompiledContract interface {
 }
 
 type PrecompiledContractWrapper struct {
-	evm *EVM
+	Evm *EVM
 	// CallerAddress is the result of the caller which initialised this
 	// contract. However when the "call method" is delegated this value
 	// needs to be initialised to that of the caller's caller.
@@ -59,7 +59,7 @@ type PrecompiledContractWrapper struct {
 // NewContract returns a new contract environment for the execution of EVM.
 func NewPrecompiledContractWrapper(evm *EVM, caller ContractRef, object ContractRef, value *big.Int, gas uint64) PrecompiledContractWrapper {
 	c := PrecompiledContractWrapper{
-		evm:           evm,
+		Evm:           evm,
 		CallerAddress: caller.Address(),
 		caller:        caller,
 		self:          object,
