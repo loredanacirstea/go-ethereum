@@ -38,7 +38,7 @@ import (
 // contract.
 type PrecompiledContract interface {
 	RequiredGas(input []byte) uint64
-	Run(precompileWrap PrecompiledContractWrapper, input []byte, readOnly bool) ([]byte, error) // Run runs the precompiled contract
+	Run(precompileWrap *PrecompiledContractWrapper, input []byte, readOnly bool) ([]byte, error) // Run runs the precompiled contract
 }
 
 type PrecompiledContractWrapper struct {
@@ -232,7 +232,7 @@ func (c *ecrecover) RequiredGas(input []byte) uint64 {
 	return params.EcrecoverGas
 }
 
-func (c *ecrecover) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *ecrecover) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -277,7 +277,7 @@ type sha256hash struct{}
 func (c *sha256hash) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.Sha256PerWordGas + params.Sha256BaseGas
 }
-func (c *sha256hash) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *sha256hash) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -296,7 +296,7 @@ type ripemd160hash struct{}
 func (c *ripemd160hash) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.Ripemd160PerWordGas + params.Ripemd160BaseGas
 }
-func (c *ripemd160hash) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *ripemd160hash) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -316,7 +316,7 @@ type dataCopy struct{}
 func (c *dataCopy) RequiredGas(input []byte) uint64 {
 	return uint64(len(input)+31)/32*params.IdentityPerWordGas + params.IdentityBaseGas
 }
-func (c *dataCopy) Run(pw PrecompiledContractWrapper, in []byte, _ bool) ([]byte, error) {
+func (c *dataCopy) Run(pw *PrecompiledContractWrapper, in []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(in)) {
 		return nil, ErrOutOfGas
 	}
@@ -446,7 +446,7 @@ func (c *bigModExp) RequiredGas(input []byte) uint64 {
 	return gas.Uint64()
 }
 
-func (c *bigModExp) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bigModExp) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -530,7 +530,7 @@ func (c *bn256AddIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256AddGasIstanbul
 }
 
-func (c *bn256AddIstanbul) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256AddIstanbul) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -547,7 +547,7 @@ func (c *bn256AddByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256AddGasByzantium
 }
 
-func (c *bn256AddByzantium) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256AddByzantium) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -576,7 +576,7 @@ func (c *bn256ScalarMulIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256ScalarMulGasIstanbul
 }
 
-func (c *bn256ScalarMulIstanbul) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256ScalarMulIstanbul) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -593,7 +593,7 @@ func (c *bn256ScalarMulByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256ScalarMulGasByzantium
 }
 
-func (c *bn256ScalarMulByzantium) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256ScalarMulByzantium) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -652,7 +652,7 @@ func (c *bn256PairingIstanbul) RequiredGas(input []byte) uint64 {
 	return params.Bn256PairingBaseGasIstanbul + uint64(len(input)/192)*params.Bn256PairingPerPointGasIstanbul
 }
 
-func (c *bn256PairingIstanbul) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256PairingIstanbul) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -669,7 +669,7 @@ func (c *bn256PairingByzantium) RequiredGas(input []byte) uint64 {
 	return params.Bn256PairingBaseGasByzantium + uint64(len(input)/192)*params.Bn256PairingPerPointGasByzantium
 }
 
-func (c *bn256PairingByzantium) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bn256PairingByzantium) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -699,7 +699,7 @@ var (
 	errBlake2FInvalidFinalFlag   = errors.New("invalid final flag")
 )
 
-func (c *blake2F) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *blake2F) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -757,7 +757,7 @@ func (c *bls12381G1Add) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G1AddGas
 }
 
-func (c *bls12381G1Add) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G1Add) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -799,7 +799,7 @@ func (c *bls12381G1Mul) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G1MulGas
 }
 
-func (c *bls12381G1Mul) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G1Mul) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -853,7 +853,7 @@ func (c *bls12381G1MultiExp) RequiredGas(input []byte) uint64 {
 	return (uint64(k) * params.Bls12381G1MulGas * discount) / 1000
 }
 
-func (c *bls12381G1MultiExp) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G1MultiExp) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -900,7 +900,7 @@ func (c *bls12381G2Add) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G2AddGas
 }
 
-func (c *bls12381G2Add) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G2Add) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -942,7 +942,7 @@ func (c *bls12381G2Mul) RequiredGas(input []byte) uint64 {
 	return params.Bls12381G2MulGas
 }
 
-func (c *bls12381G2Mul) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G2Mul) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -996,7 +996,7 @@ func (c *bls12381G2MultiExp) RequiredGas(input []byte) uint64 {
 	return (uint64(k) * params.Bls12381G2MulGas * discount) / 1000
 }
 
-func (c *bls12381G2MultiExp) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381G2MultiExp) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -1043,7 +1043,7 @@ func (c *bls12381Pairing) RequiredGas(input []byte) uint64 {
 	return params.Bls12381PairingBaseGas + uint64(len(input)/384)*params.Bls12381PairingPerPairGas
 }
 
-func (c *bls12381Pairing) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381Pairing) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -1126,7 +1126,7 @@ func (c *bls12381MapG1) RequiredGas(input []byte) uint64 {
 	return params.Bls12381MapG1Gas
 }
 
-func (c *bls12381MapG1) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381MapG1) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
@@ -1165,7 +1165,7 @@ func (c *bls12381MapG2) RequiredGas(input []byte) uint64 {
 	return params.Bls12381MapG2Gas
 }
 
-func (c *bls12381MapG2) Run(pw PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
+func (c *bls12381MapG2) Run(pw *PrecompiledContractWrapper, input []byte, _ bool) ([]byte, error) {
 	if !pw.UseGas(c.RequiredGas(input)) {
 		return nil, ErrOutOfGas
 	}
